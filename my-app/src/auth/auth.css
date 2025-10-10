@@ -1,0 +1,67 @@
+/* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0 */
+
+/* Center the authenticator on the page */
+[data-amplify-authenticator] {
+  --amplify-components-authenticator-router-contentPadding: 2rem;
+  --amplify-components-authenticator-router-borderWidth: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f5f5;
+}
+
+/* Left align form labels */
+[data-amplify-authenticator] .amplify-label {
+  text-align: left !important;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+/* Left align form inputs */
+[data-amplify-authenticator] .amplify-input {
+  text-align: left !important;
+  width: 100%;
+}
+
+/* Left align form field containers */
+[data-amplify-authenticator] .amplify-field {
+  text-align: left !important;
+  margin-bottom: 1rem;
+}
+
+/* Left align the entire form */
+[data-amplify-authenticator] .amplify-authenticator__form {
+  text-align: left !important;
+}
+
+/* Left align form sections */
+[data-amplify-authenticator] .amplify-flex {
+  text-align: left !important;
+}
+
+/* Center the form container but left align content */
+[data-amplify-authenticator] .amplify-card {
+  max-width: 400px;
+  margin: 0 auto;
+  text-align: left !important;
+}
+
+/* Left align form headings */
+[data-amplify-authenticator] .amplify-heading {
+  text-align: center !important;
+  margin-bottom: 1.5rem;
+}
+
+/* Left align error messages */
+[data-amplify-authenticator] .amplify-alert {
+  text-align: left !important;
+}
+
+/* Amplify UI customizations */
+[data-amplify-theme] {
+  --amplify-colors-brand-primary-60: #61dafb;
+  --amplify-colors-brand-primary-80: #21a9c7;
+  --amplify-colors-brand-primary-90: #1a8ca3;
+}

@@ -1,0 +1,890 @@
+
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for QuickSight Embedding Architecture'
+
+# No parameters needed - Lambda will handle user registration dynamically
+
+Resources:
+
+  # Logging bucket for S3
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingLoggingBucket
+
+  # Bucket Policy for the Logging Bucket
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow S3 log delivery
+          - Sid: AllowS3LogDelivery
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: 's3:PutObject'
+            Resource: !Sub '${LoggingBucket.Arn}/website-logs/*'
+            Condition:
+              StringEquals:
+                's3:x-amz-acl': 'bucket-owner-full-control'
+                
+          # Allow CloudFront log delivery
+          - Sid: AllowCloudFrontLogDelivery
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: 's3:PutObject'
+            Resource: !Sub '${LoggingBucket.Arn}/cloudfront-logs/*'
+            Condition:
+              StringEquals:
+                's3:x-amz-acl': 'bucket-owner-full-control'
+                
+          # Deny unencrypted object uploads
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                's3:x-amz-server-side-encryption': 'AES256'
+                
+          # Deny non-HTTPS access
+          - Sid: DenyNonHttpsAccess
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: 
+              - !Sub '${LoggingBucket.Arn}'
+              - !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # S3 Bucket for Static Web Hosting
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: website-logs/
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingWebsite
+
+  # Bucket Policy for CloudFront Access
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Sub '${WebsiteBucket.Arn}/*'
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+          - Sid: RestrictToTLSRequestsOnly
+            Action: 's3:*'
+            Effect: Deny
+            Resource:
+              - !Sub '${WebsiteBucket.Arn}'
+              - !Sub '${WebsiteBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+            Principal: '*'
+
+  # Logging bucket specifically for CloudFront with ACLs enabled
+  CloudFrontLoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite  # This enables ACLs but only for log delivery
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled  # Add this to enable versioning
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AutoDelete
+            Status: Enabled
+            ExpirationInDays: 90  # Auto-delete logs after 90 days
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingCloudFrontLoggingBucket
+
+  # Bucket Policy for CloudFront Logging Bucket
+  CloudFrontLoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFrontLoggingBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Deny non-HTTPS access
+          - Sid: DenyNonHttpsAccess
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'  # This is acceptable as a Deny statement for security
+            Resource: 
+              - !Sub '${CloudFrontLoggingBucket.Arn}'
+              - !Sub '${CloudFrontLoggingBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+                
+          # Allow CloudFront log delivery
+          - Sid: AllowCloudFrontLogDelivery
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: 
+              - 's3:PutObject'
+            Resource: !Sub '${CloudFrontLoggingBucket.Arn}/*'
+            
+          # Allow account access with specific permissions (instead of s3:*)
+          - Sid: RestrictToAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 
+              - 's3:GetObject'
+              - 's3:ListBucket'
+              - 's3:GetBucketLocation'
+              - 's3:GetBucketPolicy'
+              - 's3:GetLifecycleConfiguration'
+            Resource: 
+              - !Sub '${CloudFrontLoggingBucket.Arn}'
+              - !Sub '${CloudFrontLoggingBucket.Arn}/*'
+
+
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+        Enabled: true
+        DefaultRootObject: index.html
+        Logging:
+          Bucket: !GetAtt CloudFrontLoggingBucket.DomainName
+          IncludeCookies: false
+          Prefix: cloudfront-logs/
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        PriceClass: PriceClass_100
+        WebACLId: !GetAtt WebACL.Arn
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1.2_2021
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingDistribution
+
+  # CloudFront Origin Access Control
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: S3OriginAccessControl
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # WAF Web ACL
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: QuickSightEmbeddingWebACL
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      Rules:
+        # Core Protection
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSetMetric
+            
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: KnownBadInputsRuleSetMetric
+        
+        # Bot Protection - Essential for embedded analytics
+        - Name: AWSManagedRulesBotControlRuleSet
+          Priority: 3
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesBotControlRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BotControlRuleSetMetric
+        
+        # IP Reputation - Block known malicious IPs
+        - Name: AWSManagedRulesAmazonIpReputationList
+          Priority: 4
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: IPReputationListMetric
+        
+        # Rate Limiting - Prevent abuse and DoS
+        - Name: RateBasedRule
+          Priority: 5
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateBasedRuleMetric
+              
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: QuickSightEmbeddingWebACL
+
+
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: QuickSightEmbeddingUserPool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+
+  # Cognito User Pool Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: QuickSightEmbeddingClient
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !Sub 'https://${CloudFrontDistribution.DomainName}'
+      LogoutURLs:
+        - !Sub 'https://${CloudFrontDistribution.DomainName}'
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+
+  # KMS Key for Lambda Environment Variables
+  LambdaKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting Lambda environment variables
+      EnableKeyRotation: true
+      KeyPolicy:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+            Resource: '*'
+
+  # Dead Letter Queue for Lambda
+  LambdaDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId: !Ref LambdaKmsKey
+
+  # Lambda Function Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: QuickSightEmbeddingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'quicksight:GenerateEmbedUrlForRegisteredUser'
+                  - 'quicksight:DescribeUser'
+                  - 'quicksight:RegisterUser'
+                Resource: 
+                  - !Sub 'arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                Resource: !GetAtt LambdaDLQ.Arn
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingLambdaRole
+
+  # Lambda Function
+  EmbeddingLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: QuickSightEmbeddingFunction
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Timeout: 60
+      MemorySize: 128
+      ReservedConcurrentExecutions: 10
+      DeadLetterConfig:
+        TargetArn: !GetAtt LambdaDLQ.Arn
+      Environment:
+        Variables:
+          AWS_ACCOUNT_ID: !Ref AWS::AccountId
+      KmsKeyArn: !GetAtt LambdaKmsKey.Arn
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import boto3
+          import logging
+
+          # Configure logger
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def create_response(status_code, msg, data=None):
+              if data is None:
+                  data = {}
+                  
+              log_info(f"Status_code: {status_code} Response: {msg}")
+              
+              response_body = {
+                  "statusCode": status_code,
+                  "msg": msg,
+                  "data": data
+              }
+              
+              return {
+                  'statusCode': status_code,
+                  'headers': {
+                      'Access-Control-Allow-Origin': '*',
+                      'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                      'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+                      'Content-Type': 'application/json',
+                      'X-Content-Type-Options': 'nosniff',
+                      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+                      'Cache-Control': 'no-cache,no-store, max-age=0'
+                  },
+                  'body': json.dumps(response_body)
+              }
+
+          def log_info(message):
+              logger.info(message)
+
+          def get_or_create_quicksight_user(client, aws_account_id, email):
+              try:
+                  # First, try to get the user to see if they exist
+                  response = client.describe_user(
+                      AwsAccountId=aws_account_id,
+                      Namespace='default',
+                      UserName=email
+                  )
+                  log_info(f"User {email} already exists in QuickSight")
+                  return {"success": True, "user_arn": response['User']['Arn']}
+              except client.exceptions.ResourceNotFoundException:
+                  # User doesn't exist, register them
+                  log_info(f"User {email} not found, registering new user")
+                  try:
+                      response = client.register_user(
+                          IdentityType='IAM',
+                          Email=email,
+                          UserRole='READER',
+                          AwsAccountId=aws_account_id,
+                          Namespace='default',
+                          UserName=email
+                      )
+                      log_info(f"Successfully registered user {email}")
+                      return {"success": True, "user_arn": response['User']['Arn']}
+                  except Exception as e:
+                      log_info(f"Failed to register user: {str(e)}")
+                      return {"success": False, "error": str(e)}
+              except Exception as e:
+                  log_info(f"Error checking user existence: {str(e)}")
+                  return {"success": False, "error": str(e)}
+
+          def generate_embed_url(client, visual_data, email):
+              try:
+                  # Get account ID and admin user ARN from environment variables
+                  aws_account_id = os.environ.get('AWS_ACCOUNT_ID')
+                  
+                  if not aws_account_id:
+                      return {
+                          "success": False,
+                          "error": "Missing required environment variables: AWS_ACCOUNT_ID"
+                      }
+                  
+                  # Extract visual data
+                  dashboard_id = visual_data.get('dashboard_id')
+                  sheet_id = visual_data.get('sheet_id')
+                  visual_id = visual_data.get('visual_id')
+                  
+                  if not all([dashboard_id, sheet_id, visual_id]):
+                      return {
+                          "success": False,
+                          "error": "Missing required parameters: dashboard_id, sheet_id, or visual_id"
+                      }
+                  
+                  # Get or create the user
+                  user_result = get_or_create_quicksight_user(client, aws_account_id, email)
+
+                  if not user_result["success"]:
+                      return {
+                          "success": False,
+                          "error": f"Failed to get or create QuickSight user: {user_result.get('error')}"
+                      }
+                  
+                  user_arn = user_result["user_arn"]
+
+                  # Configure the experience for a single visual
+                  experience_config = {
+                      'DashboardVisual': {
+                          'InitialDashboardVisualId': {
+                              'DashboardId': dashboard_id,
+                              'SheetId': sheet_id,
+                              'VisualId': visual_id
+                          }
+                      }
+                  }
+                  
+                  # Generate the embed URL
+                  response = client.generate_embed_url_for_registered_user(
+                      AwsAccountId=aws_account_id,
+                      SessionLifetimeInMinutes=600,
+                      UserArn=user_arn,
+                      ExperienceConfiguration=experience_config,
+                  )
+
+                  return {
+                      "embedUrl": response['EmbedUrl'],
+                      "dashboard_id": dashboard_id,
+                      "sheet_id": sheet_id,
+                      "visual_id": visual_id,
+                      "success": True
+                  }
+                  
+              except Exception as e:
+                  error_str = str(e)            
+                  return {
+                      "success": False,
+                      "error": error_str,
+                      "dashboard_id": visual_data.get('dashboard_id'),
+                      "sheet_id": visual_data.get('sheet_id'),
+                      "visual_id": visual_data.get('visual_id')
+                  }
+
+          def handle_visual_embed_request(body, client):
+              if not body:
+                  return create_response(400, "Bad Request", {"error": "Missing request body"})
+              
+              # Validate required fields
+              if not all(key in body for key in ['dashboard_id', 'sheet_id', 'visual_id', 'email']):
+                  return create_response(400, "Bad Request", 
+                                        {"error": "Missing required parameters: dashboard_id, sheet_id, visual_id or email"})
+              
+              email = body.get('email')
+              log_info(f"Generating embed URL for user: {email}, visual: {body.get('visual_id')} in dashboard: {body.get('dashboard_id')}")
+              
+              # Generate embed URL for the single visual
+              result = generate_embed_url(client, body, email)
+              
+              if result.get('success'):
+                  log_info(f"Successfully generated embed URL for visual: {body.get('visual_id')}")
+                  return create_response(200, "Success", result)
+              else:
+                  log_info(f"Failed to generate embed URL: {result.get('error')}")
+                  return create_response(400, "Failed to generate embed URL", result)
+
+          # Add the Lambda handler function
+          def lambda_handler(event, context):
+              """
+              Lambda function handler to generate QuickSight embed URL for a single visual
+              """
+              try:
+                  # Initialize QuickSight client
+                  quicksight_client = boto3.client('quicksight')
+                  
+                  # Parse request body
+                  if 'body' in event:
+                      try:
+                          body = json.loads(event['body'])
+                      except:
+                          return create_response(400, "Bad Request", {"error": "Invalid JSON in request body"})
+                  else:
+                      body = event
+                  
+                  # Process the request
+                  return handle_visual_embed_request(body, quicksight_client)
+                  
+              except Exception as e:
+                  log_info(f"Error in lambda_handler: {str(e)}")
+                  return create_response(500, "Internal Server Error", {"error": str(e)})
+
+      Tags:
+        - Key: Name
+          Value: QuickSightEmbeddingFunction
+
+  # API Gateway REST API
+  EmbeddingApi:
+      Type: AWS::ApiGateway::RestApi
+      Properties:
+        Name: QuickSightEmbeddingApi
+        Description: API for QuickSight embedding
+        EndpointConfiguration:
+          Types:
+            - REGIONAL
+        Tags:
+          - Key: Name
+            Value: QuickSightEmbeddingApi
+
+  # API Gateway Resource
+  EmbeddingResource:
+      Type: AWS::ApiGateway::Resource
+      Properties:
+        RestApiId: !Ref EmbeddingApi
+        ParentId: !GetAtt EmbeddingApi.RootResourceId
+        PathPart: 'get-embed-url'
+
+  # API Gateway Method
+  EmbeddingMethod:
+      Type: AWS::ApiGateway::Method
+      Properties:
+        RestApiId: !Ref EmbeddingApi
+        ResourceId: !Ref EmbeddingResource
+        HttpMethod: POST
+        AuthorizationType: COGNITO_USER_POOLS
+        AuthorizerId: !Ref ApiGatewayAuthorizer
+        Integration:
+          Type: AWS_PROXY
+          IntegrationHttpMethod: POST
+          Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmbeddingLambdaFunction.Arn}/invocations'
+
+  # API Gateway OPTIONS Method for CORS
+  EmbeddingOptionsMethod:
+      Type: AWS::ApiGateway::Method
+      Properties:
+        RestApiId: !Ref EmbeddingApi
+        ResourceId: !Ref EmbeddingResource
+        HttpMethod: OPTIONS
+        AuthorizationType: NONE
+        Integration:
+          Type: MOCK
+          IntegrationResponses:
+            - StatusCode: 200
+              ResponseParameters:
+                method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+                method.response.header.Access-Control-Allow-Origin: !Sub "'https://${CloudFrontDistribution.DomainName}'"
+          RequestTemplates:
+            application/json: '{"statusCode": 200}'
+        MethodResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: true
+              method.response.header.Access-Control-Allow-Methods: true
+              method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway Authorizer
+  ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoUserPoolAuthorizer
+        RestApiId: !Ref EmbeddingApi
+        Type: COGNITO_USER_POOLS
+        IdentitySource: method.request.header.Authorization
+        ProviderARNs:
+          - !GetAtt UserPool.Arn
+
+  # API Gateway Deployment
+  ApiDeployment:
+      Type: AWS::ApiGateway::Deployment
+      DependsOn:
+        - EmbeddingMethod
+        - EmbeddingOptionsMethod
+      Properties:
+        RestApiId: !Ref EmbeddingApi
+
+  # KMS Key for CloudWatch Logs encryption
+  CloudWatchLogsKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting CloudWatch Logs
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow CloudWatch Logs to encrypt logs
+            Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action:
+              - 'kms:Encrypt*'
+              - 'kms:Decrypt*'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:Describe*'
+            Resource: '*'
+
+  # KMS Key Alias for easier reference
+  CloudWatchLogsKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AWS::StackName}-cloudwatch-logs'
+      TargetKeyId: !Ref CloudWatchLogsKMSKey
+
+  # Updated CloudWatch Log Group with KMS encryption
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${EmbeddingApi}-access-logs"
+      RetentionInDays: 90
+      KmsKeyId: !GetAtt CloudWatchLogsKMSKey.Arn
+
+  # IAM Role for API Gateway CloudWatch Logs
+  ApiGatewayCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs'
+      Path: /service-role/
+
+  # API Gateway Account Settings
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchLogsRole.Arn
+
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    DependsOn: ApiGatewayAccount
+    Properties:
+      DeploymentId: !Ref ApiDeployment
+      RestApiId: !Ref EmbeddingApi
+      StageName: prod
+      CacheClusterEnabled: true
+      CacheClusterSize: 0.5
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '{"requestId":"$context.requestId", "ip":"$context.identity.sourceIp", "caller":"$context.identity.caller", "user":"$context.identity.user", "requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod", "resourcePath":"$context.resourcePath", "status":"$context.status", "protocol":"$context.protocol", "responseLength":"$context.responseLength"}'
+
+      
+  # API Gateway Usage Plan
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: QuickSightEmbeddingUsagePlan
+      Description: Usage plan for QuickSight embedding API
+      Throttle:
+        RateLimit: 100
+        BurstLimit: 200
+      Quota:
+        Limit: 10000
+        Period: DAY
+      ApiStages:
+        - ApiId: !Ref EmbeddingApi
+          Stage: !Ref ApiStage  # Reference the Stage resource instead of the string 'prod'
+
+
+  # API Gateway Usage Plan Key
+  ApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+
+  # API Key
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Description: API Key for QuickSight embedding
+      Enabled: true
+
+  # Lambda Permission for API Gateway
+  LambdaApiGatewayPermission:
+      Type: AWS::Lambda::Permission
+      Properties:
+        Action: lambda:InvokeFunction
+        FunctionName: !Ref EmbeddingLambdaFunction
+        Principal: apigateway.amazonaws.com
+        SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${EmbeddingApi}/*/POST/get-embed-url'
+
+Outputs:
+  CloudFrontDomainName:
+    Description: 'CloudFront Distribution Domain Name'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  
+  ApiGatewayUrl:
+    Description: 'API Gateway URL'
+    Value: !Sub 'https://${EmbeddingApi}.execute-api.${AWS::Region}.amazonaws.com/${ApiStage}'
+  
+  UserPoolId:
+    Description: 'Cognito User Pool ID'
+    Value: !Ref UserPool
+  
+  UserPoolClientId:
+    Description: 'Cognito User Pool Client ID'
+    Value: !Ref UserPoolClient
+  
+  S3BucketName:
+    Description: 'S3 Bucket Name for Website Hosting'
+    Value: !Ref WebsiteBucket
+
