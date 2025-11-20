@@ -1,11 +1,11 @@
-# Amazon QuickSight Visual Embedding in React
+# Amazon Quick Sight Visual Embedding in React
 
 This project demonstrates how to:
-- Embed individual QuickSight visuals (not entire dashboards) in a React web application
+- Embed individual Quick Sight visuals (not entire dashboards) in a React web application
 - Generate embed URLs dynamically using AWS Lambda and API Gateway
 - Provide a seamless user experience with loading states and error handling
 
-**Perfect for:** Organizations wanting to integrate specific QuickSight charts/graphs into their custom web applications.
+**Perfect for:** Organizations wanting to integrate specific Quick Sight charts/graphs into their custom web applications.
 
 ## Architecture
 
@@ -25,22 +25,22 @@ This project demonstrates how to:
 
 6. Validation using Cognito Authorizer: API Gateway validates the token using a Cognito Authorizer. If the token is valid, the request proceeds; otherwise, it is denied with a 401 Unauthorized response.
 
-7. Request directed to Lambda for processing: The validated request is then forwarded to a backend Lambda function. This function is responsible for generating the embed URL for the requested QuickSight visual.
+7. Request directed to Lambda for processing: The validated request is then forwarded to a backend Lambda function. This function is responsible for generating the embed URL for the requested Quick Sight visual.
 
-8. Lambda generates embed URL from QuickSight: Using an IAM role with appropriate permissions, Lambda calls the GenerateEmbedUrlForRegisteredUser QuickSight API to generate a secure, user-scoped visual URL.
+8. Lambda generates embed URL from Quick Sight: Using an IAM role with appropriate permissions, Lambda calls the GenerateEmbedUrlForRegisteredUser Quick Sight API to generate a secure, user-scoped visual URL.
 
 9. Lambda returns embed URL to API Gateway: Once the embed URL is generated, Lambda sends it back to API Gateway as part of a JSON response. This response is then prepared for delivery to the frontend.
 
 10. Embed URL returned in response to CloudFront and user: The embed URL is returned to the browser as the API response.
 
-11. Visual displayed to user: The React app receives the response and uses QuickSight Embedding SDK to render the specific visual seamlessly.
+11. Visual displayed to user: The React app receives the response and uses Quick Sight Embedding SDK to render the specific visual seamlessly.
 
 
 ## Prerequisites
 
 ### AWS Services Required
 - **AWS Account** with appropriate permissions
-- **Amazon QuickSight** account with at least one dashboard containing visuals
+- **Amazon Quick Sight** account with at least one dashboard containing visuals
 
 ### Development Environment
 - Node.js (v16 or higher)
@@ -48,8 +48,8 @@ This project demonstrates how to:
 - This project uses Vite as the build tool (not Create React App)
 - AWS Amplify libraries for Cognito custom authentication UI components
 
-### QuickSight Requirements
-- QuickSight dashboard with the visual you want to embed
+### Quick Sight Requirements
+- Quick Sight dashboard with the visual you want to embed
 - Dashboard ID, Sheet ID, and Visual ID
 
 ## Setup Instructions
@@ -58,7 +58,7 @@ This project demonstrates how to:
 
 ```bash
 git clone <repository-url>
-cd embedding-quicksight-visuals-in-react-app
+cd sample-quicksight-visual-embedding
 ```
 
 ### 2. Deploy CloudFormation Stack
@@ -116,7 +116,7 @@ VITE_USER_POOL_WEB_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
 # API Configuration (from CloudFormation outputs)
 VITE_API_URL=https://your-api-id.execute-api.us-east-1.amazonaws.com/prod
 
-# QuickSight Visual Configuration
+# Quick Sight Visual Configuration
 VITE_DASHBOARD_ID=your-dashboard-id
 VITE_SHEET_ID=your-sheet-id
 VITE_VISUAL_ID=your-visual-id
@@ -125,10 +125,10 @@ VITE_VISUAL_ID=your-visual-id
 **Note**: Replace the values with:
 - Cognito values from CloudFormation outputs
 - API URL from CloudFormation outputs
-- QuickSight visual IDs from your dashboard
+- Quick Sight visual IDs from your dashboard
 
-#### Get QuickSight Visual Information
-1. Open your QuickSight dashboard
+#### Get Quick Sight Visual Information
+1. Open your Quick Sight dashboard
 2. Click on the 3 dots menu of any visual
 3. Note down the **Dashboard ID**, **Sheet ID**, and **Visual ID**
 
@@ -147,19 +147,19 @@ VITE_VISUAL_ID=your-visual-id
 2. Change line 38: `hideSignUp={true}` to `hideSignUp={false}`
 3. Users can now register themselves from UI
 
-**Note**: QuickSight users are automatically registered by the Lambda function when they first access the application. No manual QuickSight user setup required.
+**Note**: Quick Sight users are automatically registered by the Lambda function when they first access the application. No manual Quick Sight user setup required.
 
-#### Grant QuickSight Dashboard Access
-**Important**: Each login user must be granted access to the QuickSight dashboard:
+#### Grant Quick Sight Dashboard Access
+**Important**: Each login user must be granted access to the Quick Sight dashboard:
 
-1. Go to QuickSight Console
+1. Go to Quick Sight Console
 2. Navigate to your dashboard
 3. Click "Share" → "Share dashboard"
 4. Enter the user's email address (same as Cognito login email)
 5. Select appropriate permissions (Viewer recommended)
 6. Click "Share"
 
-**Note**: Users will not be able to view embedded visuals without proper dashboard permissions in QuickSight.
+**Note**: Users will not be able to view embedded visuals without proper dashboard permissions in Quick Sight.
 
 ### 5. Build and Deploy Frontend
 
@@ -185,12 +185,12 @@ npm run build
 6. Click "Create invalidation"
 7. Wait for invalidation to complete (2-3 minutes)
 
-### 6. QuickSight Domain Configuration
+### 6. Quick Sight Domain Configuration
 
-**Important**: Add your CloudFront domain to QuickSight allowlist:
+**Important**: Add your CloudFront domain to Quick Sight allowlist:
 
-1. Go to QuickSight Console
-2. Click on your profile → "Manage QuickSight"
+1. Go to Quick Sight Console
+2. Click on your profile → "Manage Quick Sight"
 3. Go to "Domains and Embedding"
 4. Add your CloudFront domain:
    ```
@@ -207,14 +207,14 @@ npm run build
 2. **Test the Application**
    - Open the CloudFront domain in your browser
    - Sign in with your Cognito user credentials
-   - The QuickSight visual should load and display
+   - The Quick Sight visual should load and display
 
 ### 8. Troubleshooting
 
 #### Common Issues:
 
 1. **"Domain not allowed" error**
-   - Ensure CloudFront domain is added to QuickSight allowlist
+   - Ensure CloudFront domain is added to Quick Sight allowlist
    - Check that the domain format is correct (https://)
 
 2. **Authentication errors**
@@ -227,13 +227,13 @@ npm run build
 
 4. **Visual not loading**
    - Confirm Dashboard ID, Sheet ID, and Visual ID are correct
-   - Check QuickSight user permissions
+   - Check Quick Sight user permissions
    - Verify Lambda function has proper IAM permissions
-   - **Ensure the login user's email has been granted access to the QuickSight dashboard**
+   - **Ensure the login user's email has been granted access to the Quick Sight dashboard**
 
 5. **"User does not have access" error**
-   - Verify the user's email is shared with the QuickSight dashboard
-   - Check dashboard sharing permissions in QuickSight Console
+   - Verify the user's email is shared with the Quick Sight dashboard
+   - Check dashboard sharing permissions in Quick Sight Console
 
 ## Security Considerations
 
@@ -242,9 +242,9 @@ This solution implements comprehensive security best practices across all layers
 ### Authentication & Authorization
 - **Amazon Cognito User Pools**: Secure JWT tokens with strong password policies and optional MFA
 - **Multi-Factor Authentication**: Optional TOTP-based MFA using authenticator apps (Google Authenticator, Authy, etc.)
-- **Email-Based User Registration**: Automatic QuickSight user provisioning with READER role
+- **Email-Based User Registration**: Automatic Quick Sight user provisioning with READER role
 - **API Gateway Cognito Authorizers**: JWT token validation for all API requests
-- **QuickSight Registered User Embedding**: No anonymous access, user-specific permissions
+- **Quick Sight Registered User Embedding**: No anonymous access, user-specific permissions
 
 ### Network Security
 - **AWS WAF**: Layer 7 application firewall with comprehensive protection:
@@ -268,7 +268,7 @@ This solution implements comprehensive security best practices across all layers
 
 ### Infrastructure Security
 - **IAM Least Privilege**: 
-  - Lambda execution roles with minimal QuickSight permissions
+  - Lambda execution roles with minimal Quick Sight permissions
   - Service-specific IAM policies
   - Resource-level access controls
 - **API Security**:
@@ -331,9 +331,9 @@ The CloudFormation template automatically sets up secure infrastructure includin
 | `VITE_USER_POOL_ID` | Cognito User Pool ID | `us-east-1_AbCdEfGhI` |
 | `VITE_USER_POOL_WEB_CLIENT_ID` | Cognito App Client ID | `1234567890abcdefghijklmnop` |
 | `VITE_API_URL` | API Gateway endpoint | `https://api.amazonaws.com/prod` |
-| `VITE_DASHBOARD_ID` | QuickSight Dashboard ID | `12345678-1234-1234-1234-123456789012` |
-| `VITE_SHEET_ID` | QuickSight Sheet ID | `sheet1` |
-| `VITE_VISUAL_ID` | QuickSight Visual ID | `visual1` |
+| `VITE_DASHBOARD_ID` | Quick Sight Dashboard ID | `12345678-1234-1234-1234-123456789012` |
+| `VITE_SHEET_ID` | Quick Sight Sheet ID | `sheet1` |
+| `VITE_VISUAL_ID` | Quick Sight Visual ID | `visual1` |
 
 ## Features
 
@@ -343,16 +343,16 @@ The CloudFormation template automatically sets up secure infrastructure includin
 
 ## Benefits of Individual Visual Embedding with Registered Users
 
-This implementation provides specific advantages for embedding single QuickSight visuals:
+This implementation provides specific advantages for embedding single Quick Sight visuals:
 
 ### Visual-Level Benefits
 - **Focused Data Display**: Show only the specific chart/graph needed, not entire dashboards
-- **Clean Integration**: Embed visuals seamlessly into your React app without QuickSight UI chrome
+- **Clean Integration**: Embed visuals seamlessly into your React app without Quick Sight UI chrome
 
 ### Security & Access Control
-- **User-Specific Visual Access**: Each logged-in user sees data based on their QuickSight permissions
-- **Email-Based Authorization**: User's login email determines their data access level in QuickSight
-- **No Direct QuickSight Access**: Users never need QuickSight console access or separate accounts
+- **User-Specific Visual Access**: Each logged-in user sees data based on their Quick Sight permissions
+- **Email-Based Authorization**: User's login email determines their data access level in Quick Sight
+- **No Direct Quick Sight Access**: Users never need Quick Sight console access or separate accounts
 
 ### Cost & Operational Benefits
 - **Pay-Per-User Model**: Only pay for users who actually view the embedded visual
